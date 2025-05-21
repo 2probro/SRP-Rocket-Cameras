@@ -34,8 +34,6 @@
 #define RECORD_DURATION   120    // 2 minutes in seconds ACTUAL LAUNCH
 // #define RECORD_DURATION   10    // 10 seconds in seconds FOR TESTING
 
-#define FRAME_INTERVAL    (1000 / 15)  // ms per frame for ~15 fps
-
 // Optional audio recording (not implemented)
 #define ENABLE_AUDIO      0
 
@@ -83,13 +81,13 @@ void setup() {
   // Select optimal settings based on PSRAM availability
   // PSRAM allows for higher resolution and quality
   if (psramFound()) {
-    config.frame_size   = FRAMESIZE_UXGA;    // max resolution if PSRAM present
-    config.jpeg_quality = 15;                // Slightly lower quality for smaller files/faster writes (higher number = lower quality)
+    config.frame_size   = FRAMESIZE_SXGA;    // max resolution if PSRAM present
+    config.jpeg_quality = 20;                // Slightly lower quality for smaller files/faster writes (higher number = lower quality)
     config.fb_count     = 2;                 // double-buffering
     config.fb_location  = CAMERA_FB_IN_PSRAM;
   } else {
     config.frame_size   = FRAMESIZE_SVGA;    // fallback resolution
-    config.jpeg_quality = 12;                // standard quality
+    config.jpeg_quality = 15;                // standard quality
     config.fb_count     = 1;                 // single buffer
     config.fb_location  = CAMERA_FB_IN_DRAM;
   }
