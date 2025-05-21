@@ -8,11 +8,6 @@
 #include "soc/rtc_cntl_reg.h"
 #include <esp_random.h> // Include for random number generation
 
-// LAUNCH: make sure to set DANGEROUS_DEBUGGING_MODE to 0 and RECORD_DURATION to 120 for actual launch
-
-// MUST BE SET TO 0 FOR ACTUAL LAUNCH
-#define DANGEROUS_DEBUGGING_MODE 1 // set to 1 to skip deep sleep during testing
-
 // Pin definitions for AI-Thinker ESP32-CAM
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
@@ -36,8 +31,8 @@
 #define LED_PIN           4    // Onboard FLASH LED
 
 // Recording settings
-// #define RECORD_DURATION   120    // 2 minutes in seconds ACTUAL LAUNCH
-#define RECORD_DURATION   10    // 10 seconds in seconds FOR TESTING
+#define RECORD_DURATION   120    // 2 minutes in seconds ACTUAL LAUNCH
+// #define RECORD_DURATION   10    // 10 seconds in seconds FOR TESTING
 
 #define FRAME_INTERVAL    (1000 / 15)  // ms per frame for ~15 fps
 
@@ -52,27 +47,18 @@ void setup() {
   pinMode(BREAK_PIN, INPUT_PULLUP);
   pinMode(LED_PIN, OUTPUT);
 
+  char folder_name[12]; // Stores the unique session folder name, e.g., "/A1B2C3D4"
+
   Serial.println("Starting setup...");
 
-  // Flash LED twice to signal power on
-  for (int i = 0; i < 2; i++) {
-    digitalWrite(LED_PIN, HIGH);
-    delay(200);
-    digitalWrite(LED_PIN, LOW);
-    delay(200);
-  }
+  // Flash LED once to signal power on
+  digitalWrite(LED_PIN, HIGH);
+  delay(200);
+  digitalWrite(LED_PIN, LOW);
+  delay(200);
 
-  // If not woke by break-wire, go to deep sleep waiting for launch
-  if (!DANGEROUS_DEBUGGING_MODE && esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_EXT0) {
-    Serial.println("Waiting for launch (deep sleep)...");
-    esp_sleep_enable_ext0_wakeup((gpio_num_t)BREAK_PIN, 0);
-    esp_deep_sleep_start();
-  }
-
-  // Woke from launch event
-  Serial.println("Launch detected! Starting recording...");
-
-  // Camera configuration
+  // --- Initialize camera ---
+  Serial.println("Initializing camera...");
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer   = LEDC_TIMER_0;
@@ -111,7 +97,7 @@ void setup() {
 
   if (esp_camera_init(&config) != ESP_OK) {
     Serial.println("Camera init failed");
-    return;
+    while (1) delay(1000); // Halt
   }
 
   // Sensor tuning: adjust image settings after camera initialization
@@ -139,26 +125,84 @@ void setup() {
   s->set_dcw(s, 1);              // downsize control: 0 disable, 1 enable
   s->set_colorbar(s, 0);         // color bar test pattern: 0 disable, 1 enable
 
-  // Initialize SD card
-  // Mount SD in 1-bit mode so BREAK_PIN (GPIO12) is free
+  // --- Initialize SD card ---
+  Serial.println("Initializing SD card...");
   if (!SD_MMC.begin("/sdcard", true)) {
     Serial.println("SD Card mount failed");
-    return;
+    while (1) delay(1000); // Halt
   }
 
-  // Create a unique session folder using a random name and open MJPEG file
+  // Flash 2 times to signal SD Card and Camera initialization worked
+  for (int i = 0; i < 2; i++) {
+    digitalWrite(LED_PIN, HIGH);
+    delay(100);
+    digitalWrite(LED_PIN, LOW);
+    delay(100);
+  }
+
+  // Create a unique session folder
+  Serial.println("Creating session folder...");
   uint32_t random_num = esp_random();
-  char folder_name[12]; // '/' + 8 hex chars + null terminator
   snprintf(folder_name, sizeof(folder_name), "/%08X", random_num);
-  String session_dir(folder_name);
-
-  if (!SD_MMC.mkdir(session_dir.c_str())) {
-    Serial.println("Failed to create session directory");
+  String temp_session_dir_for_mkdir(folder_name); // Use a temporary String for mkdir path
+  if (!SD_MMC.mkdir(temp_session_dir_for_mkdir.c_str())) {
+    Serial.println("ERROR: Failed to create session directory. Halting.");
+    // Flash LED rapidly and continuously to indicate critical error
+    while (1) {
+      digitalWrite(LED_PIN, HIGH); delay(50);
+      digitalWrite(LED_PIN, LOW); delay(50);
+    }
+  } else {
+    Serial.printf("Session folder %s created successfully.\n", temp_session_dir_for_mkdir.c_str());
   }
+
+  // --- Breakwire logic ---
+  // Wait for breakwire to be connected if not already
+  if (digitalRead(BREAK_PIN) == HIGH) {
+    Serial.println("Waiting for breakwire to be connected...");
+    while (digitalRead(BREAK_PIN) == HIGH) {
+      delay(10);
+    }
+    Serial.println("Breakwire connected.");
+    // Flash 3 times to signal breakwire connected
+    for (int i = 0; i < 3; i++) {
+      digitalWrite(LED_PIN, HIGH);
+      delay(100);
+      digitalWrite(LED_PIN, LOW);
+      delay(100);
+    }
+  } else {
+    Serial.println("Breakwire already connected at startup.");
+    // Flash 3 times to signal breakwire connected
+    for (int i = 0; i < 3; i++) {
+      digitalWrite(LED_PIN, HIGH);
+      delay(100);
+      digitalWrite(LED_PIN, LOW);
+      delay(100);
+    }
+  }
+
+  Serial.println("Breakwire connected, waiting for launch...");
+
+  // While breakwire is connected, wait, until it is disconnected
+  while (digitalRead(BREAK_PIN) == LOW) {
+    delay(5);
+  }
+
+  // Recording is starting!
+  Serial.println("Recording is starting!");
+
+  // Open MJPEG file in the pre-created session folder
+  String session_dir(folder_name); // Uses folder_name populated earlier
   String mjpeg_path = session_dir + "/video.MJPEG";
   File mjpeg_file = SD_MMC.open(mjpeg_path.c_str(), FILE_WRITE);
   if (!mjpeg_file) {
-    Serial.println("Failed to open MJPEG file");
+    Serial.println("ERROR: Failed to open MJPEG file for writing. Halting.");
+    // Flash LED rapidly and continuously to indicate critical error
+    while (1) {
+      digitalWrite(LED_PIN, HIGH); delay(50);
+      digitalWrite(LED_PIN, LOW); delay(50);
+    }
   }
 
   // Main recording loop (append all frames to MJPEG container)
@@ -186,18 +230,13 @@ void setup() {
     Serial.println("MJPEG recording complete");
   }
 
-  // Flash LED twice quickly to signal done
-  for (int i = 0; i < 2; i++) {
+  // Flash LED 4 times quickly to signal recording done
+  for (int i = 0; i < 4; i++) {
     digitalWrite(LED_PIN, HIGH);
     delay(100);
     digitalWrite(LED_PIN, LOW);
     delay(100);
   }
-
-  // Go back to deep sleep
-  Serial.println("End of recording. Entering deep sleep...");
-  esp_sleep_enable_ext0_wakeup((gpio_num_t)BREAK_PIN, 0);
-  esp_deep_sleep_start();
 }
 
 void loop() {

@@ -30,9 +30,7 @@ This project uses two ESP32-Cam AI Thinker boards equipped with wide-angle lense
    - Eject the SD card and inspect the timestamped session folder for JPEG images.
 6. Prepare for actual launch:
    - Upload the ACTUAL code to the ESP32-Cam boards, NO TEST CODE, MAKE SURE BOTH BOARDS HAVE DIFFERENT CODE.
-   - Power the board with the stepdown converter.
    - Ensure a FAT32-formatted MicroSD card is inserted.
-   - Mount the ESP32-CAM module securely in the electronics stack, ensure all wires are secured.
    - Connect the break-wire between the BREAK_PIN (GPIO13) and GND; at liftoff, it will break and wake the ESP32.
 
 ## Post-Processing Recorded Video (using FFmpeg)
